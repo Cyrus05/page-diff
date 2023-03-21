@@ -1,0 +1,17 @@
+{
+  "name": "page-diff",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "diff": "node page-diff.js",
+    "html-diff": "node html-diff.js"
+  },
+  "dependencies": {
+    "diff-match-patch": "^1.0.5",
+    "pixelmatch": "^5.3.0",
+    "pngjs": "^7.0.0",
+    "pretty": "^2.0.0",
+    "puppeteer": "^19.7.4"
+  }
+}
