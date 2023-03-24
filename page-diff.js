@@ -8,16 +8,12 @@ const config = require('./config');
 
 require('./setup');
 
-const args = process.argv.slice(2);
-const [url1, url2] = args;
-const pageAliasArray = ['PAGE A', 'PAGE B',]
-let pageIndex = 0;
+const imgNameAlias = {};
 
 const takeSreenshot = async (browser, url) => {
-  const pageAlias = pageAliasArray[pageIndex++]
-  console.log(pageAlias, `loading ${url}`)
-
+  const name = imgNameAlias[url];
   const page = await browser.newPage();
+
   await page.setViewport({
     width: config.pageSize[0],
     height: config.pageSize[1]
@@ -26,14 +22,14 @@ const takeSreenshot = async (browser, url) => {
     waitUntil: 'networkidle2'
   });
 
-  console.log(pageAlias, 'scrolling...')
+  console.log(name, 'scrolling...')
   await autoScroll(page);
-  console.log(pageAlias, 'reached bottom.')
+  console.log(name, 'reached bottom.')
 
-  console.log(pageAlias, 'wait for network idle.')
-  await page.waitForNetworkIdle({ timeout: config.screenshotTimeout }).catch(() => { console.warn(pageAlias, 'wait for network idle - timeout, go ahead') });
+  console.log(name, 'wait for network idle.')
+  await page.waitForNetworkIdle({ timeout: config.screenshotTimeout }).catch(() => { console.warn(name, 'wait for network idle - timeout, go ahead') });
 
-  console.log(pageAlias, 'taking screenshot!')
+  console.log(name, 'taking screenshot!')
   const savePath = path.join(config.resultsPath, url.replaceAll(/[:/?]/ig, '') + '.png');
   await page.bringToFront();
   await page.screenshot({ path: savePath, fullPage: true, captureBeyondViewport: false });
@@ -60,58 +56,87 @@ async function autoScroll(page) {
   });
 }
 
-const createTransparentPixels = (width, height) => {
-  const pxs = new Array(width * height).fill(1).reduce((arr) => {
-    arr.push(0, 0, 0, 0);
-    return arr;
-  }, []);
+const getUrlsFromArgs = () => {
+  const args = process.argv.slice(2);
 
-  return Buffer.from(pxs);
+  return [
+    args[0],
+    args[1]
+  ]
 }
 
-const main = async () => {
+const readPng = async (imgFielPath) => {
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(imgFielPath)
+      .pipe(new PNG())
+      .on("parsed", function () {
+        resolve(this);
+      })
+      .on("error", reject);
+  })
+}
+
+const uniformizePng = (png, width, height) => {
+  const newPng = new PNG({ width, height });
+
+  png.bitblt(newPng, 0 ,0, png.width, png.height, 0, 0)
+  return newPng;
+}
+
+const diffPngs = async (img1FilePath, img2FilePath) => {
+  let img1 = await readPng(img1FilePath);
+  let img2 = await readPng(img2FilePath);
+  const width = Math.max(img1.width, img2.width);
+  const height = Math.max(img1.height, img2.height);
+
+  img1 = uniformizePng(img1, width, height),
+  img2 = uniformizePng(img2, width, height)
+  const diff = new PNG({ width, height });
+  const targetFile = path.join(config.resultsPath, 'diff.png');
+
+  let img1Data = img1.data;
+  let img2Data = img2.data;
+
+  console.log('comparing...');
+  pixelmatch(img1Data, img2Data, diff.data, width, height, { threshold: 0.1, alpha: 0.3 });
+
+  fs.writeFileSync(targetFile, PNG.sync.write(diff));
+
+  return targetFile;
+}
+
+const main = async (url1, url2) => {
   const browser = await puppeteer.launch(config.puppeteer);
 
   try {
-    const [png1, png2] = await Promise.all([
-      takeSreenshot(browser, url1),
-      takeSreenshot(browser, url2)
-    ]);
+    const imgFilePathsPromises = [url1, url2].map(url => {
+      if (url.startsWith('http')) {
+        console.log(imgNameAlias[url], 'loading from browser => \t', url);
+        return takeSreenshot(browser, url)
+      } else {
+        console.log(imgNameAlias[url], 'loading from local file => \t', url);
+        return Promise.resolve(url)
+      }
+    })
 
-    const img1 = PNG.sync.read(fs.readFileSync(png1));
-    const img2 = PNG.sync.read(fs.readFileSync(png2));
-    const width = img1.width;
-    const height = Math.max(img1.height, img2.height);
-    const diff = new PNG({ width, height });
-    const targetFile = path.join(config.resultsPath, 'diff.png');
+    const [png1FilePath, png2FilePath] = await Promise.all(imgFilePathsPromises);
+    const targetFile = await diffPngs(png1FilePath, png2FilePath);
 
-    let img1Data = img1.data;
-    let img2Data = img2.data;
-
-    if (img1.height > img2.height) {
-      const extraPixels = createTransparentPixels(width, img1.height - img2.height);
-      img2Data = Buffer.concat([img2Data, extraPixels], img2Data.length + extraPixels.length);
-    } else if (img1.height < img2.height) {
-      const extraPixels = createTransparentPixels(width, img2.height - img1.height);
-      img1Data = Buffer.concat([img1Data, extraPixels], img1Data.length + extraPixels.length);
-    }
-
-    console.log(`${pageAliasArray[0]} ==> comparing <== ${pageAliasArray[1]}`);
-    pixelmatch(img1Data, img2Data, diff.data, width, height, { threshold: 0.1, alpha: 0.2 });
-
-    fs.writeFileSync(targetFile, PNG.sync.write(diff));
     exec(`open ${targetFile}`, () => {});
-
     console.log('result file: ', targetFile)
-    console.log('done!');
 
   } finally {
     browser.close();
   }
 }
 
+const [url1, url2] = getUrlsFromArgs();
+
 if (url1 && url2) {
-  main();
+  imgNameAlias[url1] = '[A]';
+  imgNameAlias[url2] = '[B]'
+  main(url1, url2);
 } else {
+  console.log('Example:')
   console.log('yarn diff https://test1.com https://test2.com')
 }

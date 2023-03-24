@@ -53,10 +53,8 @@ async function htmlDiff(page1, page2) {
 
   const filePath = path.join(config.resultsPath, 'diff.html');
   fs.writeFileSync(filePath, html, { encoding: 'utf-8' });
-  exec(`open ${filePath}`, () => {});
 
-  console.log('result file: ', filePath);
-  console.log('done!');
+  return filePath;
 }
 
 async function createPage(browser, url) {
@@ -82,7 +80,11 @@ async function main() {
       createPage(browser, url2)
     ]);
 
-    await htmlDiff(page1, page2);
+    const targetFile = await htmlDiff(page1, page2);
+
+    exec(`open ${targetFile}`, () => {});
+    console.log('result file: ', targetFile);
+
   } finally {
     browser.close();
   }
@@ -91,5 +93,6 @@ async function main() {
 if (url1 && url2) {
   main();
 } else {
+  console.log('Example:')
   console.log('yarn html-diff https://test1.com https://test2.com')
 }
