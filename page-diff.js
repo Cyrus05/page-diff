@@ -5,22 +5,33 @@ const pixelmatch = require('pixelmatch');
 const { exec } = require('child_process');
 const puppeteer = require('puppeteer');
 const config = require('./config');
+const { parseCookies } = require('./helpers');
 
 require('./setup');
 
-const imgNameAlias = {};
-
-const takeSreenshot = async (browser, url) => {
-  const name = imgNameAlias[url];
+const takeSreenshot = async (browser, task) => {
+  const {
+    name,
+    url,
+    cookies
+  } = task;
   const page = await browser.newPage();
 
   await page.setViewport({
     width: config.pageSize[0],
     height: config.pageSize[1]
   });
+
+  if (cookies && cookies.length > 0) {
+    await page.setCookie(...cookies);
+  }
+
   await page.goto(url, {
     waitUntil: 'networkidle2'
   });
+
+  const cookiesFromPage = await page.cookies(url);
+  console.log(name, 'cookies: ', cookiesFromPage);
 
   console.log(name, 'scrolling...')
   await autoScroll(page);
@@ -56,12 +67,32 @@ async function autoScroll(page) {
   });
 }
 
-const getUrlsFromArgs = () => {
+const getDiffTasks = () => {
   const args = process.argv.slice(2);
 
+  if (!args[0] || !args[1]) {
+    return []
+  }
+
+  const getDomain = url => {
+    if (url.startsWith('http')) {
+      return new URL(url).hostname
+    }
+
+    return ''
+  }
+
   return [
-    args[0],
-    args[1]
+    {
+      url: args[0],
+      cookies: parseCookies(process.env.cookie1, getDomain(args[0])),
+      name: '[A]',
+    },
+    {
+      url: args[1],
+      cookies: parseCookies(process.env.cookie2, getDomain(args[1])),
+      name: '[B]'
+    }
   ]
 }
 
@@ -105,16 +136,17 @@ const diffPngs = async (img1FilePath, img2FilePath) => {
   return targetFile;
 }
 
-const main = async (url1, url2) => {
+const main = async ([task1, task2]) => {
   const browser = await puppeteer.launch(config.puppeteer);
 
   try {
-    const imgFilePathsPromises = [url1, url2].map(url => {
+    const imgFilePathsPromises = [task1, task2].map(task => {
+      const { name, url } = task;
       if (url.startsWith('http')) {
-        console.log(imgNameAlias[url], 'loading from browser => \t', url);
-        return takeSreenshot(browser, url)
+        console.log(name, 'loading from browser => \t', url);
+        return takeSreenshot(browser, task)
       } else {
-        console.log(imgNameAlias[url], 'loading from local file => \t', url);
+        console.log(name, 'loading from local file => \t', url);
         return Promise.resolve(url)
       }
     })
@@ -130,12 +162,10 @@ const main = async (url1, url2) => {
   }
 }
 
-const [url1, url2] = getUrlsFromArgs();
+const tasks = getDiffTasks();
 
-if (url1 && url2) {
-  imgNameAlias[url1] = '[A]';
-  imgNameAlias[url2] = '[B]'
-  main(url1, url2);
+if (tasks.length === 2) {
+  main(tasks);
 } else {
   console.log('Example:')
   console.log('yarn diff https://test1.com https://test2.com')

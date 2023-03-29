@@ -5,11 +5,9 @@ const puppeteer = require('puppeteer');
 const config = require('./config');
 const { exec } = require('child_process');
 const pretty = require('pretty');
+const { parseCookies } = require('./helpers');
 
 require('./setup');
-
-const args = process.argv.slice(2);
-const [url1, url2] = args;
 
 const withTemplate = (str, data) => {
   return str.replace(/\{\{(.*?)\}\}/gi, (match, p1) => {
@@ -71,13 +69,42 @@ async function createPage(browser, url) {
   return page;
 }
 
-async function main() {
+const getDiffTasks = () => {
+  const args = process.argv.slice(2);
+
+  if (!args[0] || !args[1]) {
+    return []
+  }
+
+  const getDomain = url => {
+    if (url.startsWith('http')) {
+      return new URL(url).hostname
+    }
+
+    return ''
+  }
+
+  return [
+    {
+      url: args[0],
+      cookies: parseCookies(process.env.cookie1, getDomain(args[0])),
+      name: '[A]',
+    },
+    {
+      url: args[1],
+      cookies: parseCookies(process.env.cookie2, getDomain(args[1])),
+      name: '[B]'
+    }
+  ]
+}
+
+async function main(tasks) {
   const browser = await puppeteer.launch(config.puppeteer);
 
   try {
     const [page1, page2] = await Promise.all([
-      createPage(browser, url1),
-      createPage(browser, url2)
+      createPage(browser, tasks[0].url),
+      createPage(browser, tasks[1].url)
     ]);
 
     const targetFile = await htmlDiff(page1, page2);
@@ -90,8 +117,10 @@ async function main() {
   }
 }
 
-if (url1 && url2) {
-  main();
+const tasks = getDiffTasks();
+
+if (tasks.length === 2) {
+  main(tasks);
 } else {
   console.log('Example:')
   console.log('yarn html-diff https://test1.com https://test2.com')
