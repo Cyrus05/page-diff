@@ -42,7 +42,7 @@ yarn diff test1.png https://test.com/my-page-2
 yarn html-diff https://test.com/my-page-1 https://test.com/my-page-2
 ```
 
-## Diff for logined page
+## Diff for logined pages
 Assign the session cookies to the env variables in `.env` file, `COOKIE1` is for the first url, `COOKIE2` is for the second url.
 
 The cookie format: `key1=value1;key2=value2;...`, e.g.
