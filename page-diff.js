@@ -4,12 +4,14 @@ const PNG = require('pngjs').PNG;
 const pixelmatch = require('pixelmatch');
 const { exec } = require('child_process');
 const puppeteer = require('puppeteer');
-const config = require('./config');
-const { parseCookies } = require('./helpers');
+const {
+  parseCookies,
+  covertUrlToFileName
+} = require('./helpers');
 
-require('./setup');
+const { env } = require('./setup');
 
-const takeSreenshot = async (browser, task) => {
+const takeSreenshots = async (browser, task) => {
   const {
     name,
     url,
@@ -18,8 +20,8 @@ const takeSreenshot = async (browser, task) => {
   const page = await browser.newPage();
 
   await page.setViewport({
-    width: config.pageSize[0],
-    height: config.pageSize[1]
+    width: 1440,
+    height: 1440
   });
 
   if (cookies && cookies.length > 0) {
@@ -30,22 +32,29 @@ const takeSreenshot = async (browser, task) => {
     waitUntil: 'networkidle2'
   });
 
-  const cookiesFromPage = await page.cookies(url);
-  console.log(name, 'cookies: ', cookiesFromPage);
-
   console.log(name, 'scrolling...')
   await autoScroll(page);
   console.log(name, 'reached bottom.')
 
   console.log(name, 'wait for network idle.')
-  await page.waitForNetworkIdle({ timeout: config.screenshotTimeout }).catch(() => { console.warn(name, 'wait for network idle - timeout, go ahead') });
+  await page.waitForNetworkIdle({ timeout: env.screenshotTimeout }).catch(() => { console.warn(name, 'wait for network idle - timeout, go ahead') });
 
-  console.log(name, 'taking screenshot!')
-  const savePath = path.join(config.resultsPath, url.replaceAll(/[:/?]/ig, '') + '.png');
-  await page.bringToFront();
-  await page.screenshot({ path: savePath, fullPage: true, captureBeyondViewport: false });
+  const paths = [];
+  for( let i = 0; i < env.screenSizes.length; i++ ) {
+    const size = env.screenSizes[i];
+
+    console.log(name, 'taking screenshot, screen size:', size)
+    await page.setViewport({
+      width: size[0],
+      height: size[1]
+    });
+    const savePath = path.join(env.resultsPath, `${covertUrlToFileName(url)}-${i + 1}.png`);
+    await page.screenshot({ path: savePath, fullPage: true, captureBeyondViewport: false });
+    paths.push(savePath);
+  }
+
   await page.close();
-  return savePath;
+  return paths;
 }
 
 async function autoScroll(page) {
@@ -85,12 +94,12 @@ const getDiffTasks = () => {
   return [
     {
       url: args[0],
-      cookies: parseCookies(process.env.cookie1, getDomain(args[0])),
+      cookies: parseCookies(env.cookie1, getDomain(args[0])),
       name: '[A]',
     },
     {
       url: args[1],
-      cookies: parseCookies(process.env.cookie2, getDomain(args[1])),
+      cookies: parseCookies(env.cookie2, getDomain(args[1])),
       name: '[B]'
     }
   ]
@@ -107,14 +116,14 @@ const readPng = async (imgFielPath) => {
   })
 }
 
-const uniformizePng = (png, width, height) => {
+const uniformizePng = (png, width, height, offsetX = 0, offsetY = 0) => {
   const newPng = new PNG({ width, height });
 
-  png.bitblt(newPng, 0 ,0, png.width, png.height, 0, 0)
+  png.bitblt(newPng, 0 ,0, png.width, png.height, offsetX, offsetY)
   return newPng;
 }
 
-const diffPngs = async (img1FilePath, img2FilePath) => {
+const diffTwoPngs = async (img1FilePath, img2FilePath) => {
   let img1 = await readPng(img1FilePath);
   let img2 = await readPng(img2FilePath);
   const width = Math.max(img1.width, img2.width);
@@ -122,37 +131,62 @@ const diffPngs = async (img1FilePath, img2FilePath) => {
 
   img1 = uniformizePng(img1, width, height),
   img2 = uniformizePng(img2, width, height)
-  const diff = new PNG({ width, height });
-  const targetFile = path.join(config.resultsPath, 'diff.png');
+  const resultPng = new PNG({ width, height });
 
   let img1Data = img1.data;
   let img2Data = img2.data;
 
-  console.log('comparing...');
-  pixelmatch(img1Data, img2Data, diff.data, width, height, { threshold: 0.1, alpha: 0.3 });
+  pixelmatch(img1Data, img2Data, resultPng.data, width, height, { threshold: 0.1, alpha: 0.3 });
+  return resultPng;
+}
 
-  fs.writeFileSync(targetFile, PNG.sync.write(diff));
+const diffPngGroups = async (img1FilePaths, img2FilePaths) => {
+  const groupCount = Math.max(img1FilePaths.length, img2FilePaths.length);
+  const resultPngs = [];
 
-  return targetFile;
+  for (let i = 0; i < groupCount; i++ ) {
+    const resultPng = await diffTwoPngs(img1FilePaths[i], img2FilePaths[i]);
+    resultPngs.push(resultPng);
+  }
+
+  let mergedPng = resultPngs[0];
+
+  if (resultPngs.length > 1) {
+    const gap = 60;
+    const width = resultPngs.reduce((sum, png) => sum + png.width + gap, 0);
+    const height = Math.max(...resultPngs.map(png => png.height));
+    let offsetX = 0;
+    mergedPng = new PNG({ width, height });
+
+    for (let i = 0; i < groupCount; i++ ) {
+      const png = resultPngs[i];
+      png.bitblt(mergedPng, 0, 0, png.width, png.height, offsetX, 0);
+      offsetX += png.width + gap;
+    }
+  }
+
+  const targetFile = path.join(env.resultsPath, 'diff.png');
+  fs.writeFileSync(targetFile, PNG.sync.write(mergedPng));
+  return targetFile
 }
 
 const main = async ([task1, task2]) => {
-  const browser = await puppeteer.launch(config.puppeteer);
+  const browser = await puppeteer.launch(env.puppeteerConfig);
 
   try {
     const imgFilePathsPromises = [task1, task2].map(task => {
       const { name, url } = task;
       if (url.startsWith('http')) {
         console.log(name, 'loading from browser => \t', url);
-        return takeSreenshot(browser, task)
+        return takeSreenshots(browser, task)
       } else {
         console.log(name, 'loading from local file => \t', url);
-        return Promise.resolve(url)
+        return Promise.resolve([url])
       }
     })
 
-    const [png1FilePath, png2FilePath] = await Promise.all(imgFilePathsPromises);
-    const targetFile = await diffPngs(png1FilePath, png2FilePath);
+    const [png1FilePaths, png2FilePaths] = await Promise.all(imgFilePathsPromises);
+    const targetFile = await diffPngGroups(png1FilePaths, png2FilePaths);
 
     exec(`open ${targetFile}`, () => {});
     console.log('result file: ', targetFile)

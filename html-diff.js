@@ -2,12 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const DiffMatchPatch = require('diff-match-patch');
 const puppeteer = require('puppeteer');
-const config = require('./config');
 const { exec } = require('child_process');
 const pretty = require('pretty');
 const { parseCookies } = require('./helpers');
-
-require('./setup');
+const { env } = require('./setup');
 
 const withTemplate = (str, data) => {
   return str.replace(/\{\{(.*?)\}\}/gi, (match, p1) => {
@@ -49,7 +47,7 @@ async function htmlDiff(page1, page2) {
 
   const html = withTemplate(tpl, { content });
 
-  const filePath = path.join(config.resultsPath, 'diff.html');
+  const filePath = path.join(env.resultsPath, 'diff.html');
   fs.writeFileSync(filePath, html, { encoding: 'utf-8' });
 
   return filePath;
@@ -59,8 +57,8 @@ async function createPage(browser, url) {
   console.log('loading ' + url);
   const page = await browser.newPage();
   await page.setViewport({
-    width: config.pageSize[0],
-    height: config.pageSize[1]
+    width: env.screenSizes[0][0],
+    height: env.screenSizes[0][1]
   });
   await page.goto(url, {
     waitUntil: 'domcontentloaded'
@@ -87,19 +85,19 @@ const getDiffTasks = () => {
   return [
     {
       url: args[0],
-      cookies: parseCookies(process.env.cookie1, getDomain(args[0])),
+      cookies: parseCookies(env.cookie1, getDomain(args[0])),
       name: '[A]',
     },
     {
       url: args[1],
-      cookies: parseCookies(process.env.cookie2, getDomain(args[1])),
+      cookies: parseCookies(env.cookie2, getDomain(args[1])),
       name: '[B]'
     }
   ]
 }
 
 async function main(tasks) {
-  const browser = await puppeteer.launch(config.puppeteer);
+  const browser = await puppeteer.launch(env.puppeteerConfig);
 
   try {
     const [page1, page2] = await Promise.all([

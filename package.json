@@ -5,6 +5,9 @@
   "license": "MIT",
   "scripts": {
     "diff": "node page-diff.js",
+    "diff:all": "SCREEN_SIZE=\"11440x1080,768x1024,375x667\" node page-diff.js",
+    "diff:tablet": "SCREEN_SIZE=\"768x1024\" node page-diff.js",
+    "diff:mobile": "SCREEN_SIZE=\"375x667\" node page-diff.js",
     "html-diff": "node html-diff.js"
   },
   "dependencies": {

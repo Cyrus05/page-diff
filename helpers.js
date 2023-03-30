@@ -12,6 +12,21 @@ const parseCookies = (cookieStr, domain) => {
     })
 }
 
+// 1440x1440,768x1024 => [[1440, 1440], [768, 1024]]
+const parseScreenSizes = sizesStr => {
+  return sizesStr
+    .split(',')
+    .map(x =>
+      x.trim()
+        .split(/x/i)
+        .map(size => Number(size))
+    ).filter(sizes => sizes.length === 2)
+}
+
+const covertUrlToFileName = url => url.replaceAll(/[:/?.]+/ig, '_')
+
 module.exports = {
-  parseCookies
+  parseCookies,
+  parseScreenSizes,
+  covertUrlToFileName
 }
