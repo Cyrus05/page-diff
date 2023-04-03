@@ -45,3 +45,5 @@ The cookie format: `key1=value1;key2=value2;...`, e.g.
 COOKIE1="session-token=xxxxx;a=b"
 COOKIE2="session-token=xxxxx;c=d"
 ```
+
+*Note:* The `.env` file will be generated whenever any `"yarn diff*"` command is run, you can also copy `.env.example` with `.env` as the new filename.
