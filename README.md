@@ -7,11 +7,6 @@ A toolset for comparing the UI and HTML structure of two pages.
 yarn install
 ```
 
-### 2. copy `.env.example` with `.env` as the new filename
-```shell
-  cp .env.example .env
-```
-
 ## pages comparing
 ### UI comparing
 ```shell

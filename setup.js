@@ -1,8 +1,13 @@
 const fs = require('fs');
 const { parseScreenSizes } = require('./helpers');
+const dotEnv = require('dotenv-safe');
+
+if (!fs.existsSync('./.env')) {
+  fs.copyFileSync('./.env.example', './.env');
+}
 
 try {
-  require('dotenv-safe').config({
+  dotEnv.config({
     allowEmptyValues: true
   });
 } catch(e) {
